@@ -912,3 +912,20 @@ input::placeholder { color: var(--text2); opacity: 0.6; }
 .char-card[data-char-id="sandbag"] .char-type {
   color: #c8a87a;
 }
+
+/* ─── BOT SLOTS ─── */
+.bot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  margin-bottom: 5px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.bot-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text2);
+}
