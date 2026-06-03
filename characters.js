@@ -37,8 +37,8 @@ class CharacterBase {
     this.airSpeed = baseStats.airSpeed ?? 4.5;
     this.fallSpeed = baseStats.fallSpeed ?? 8.0;
     this.fastFallSpeed = baseStats.fastFallSpeed ?? 14.0;
-    this.jumpForce = baseStats.jumpForce ?? -16;
-    this.doubleJumpForce = baseStats.doubleJumpForce ?? -13;
+    this.jumpForce = baseStats.jumpForce ?? -19;
+    this.doubleJumpForce = baseStats.doubleJumpForce ?? -16;
     this.airJumps = baseStats.airJumps ?? 1;
     this.traction = baseStats.traction ?? 0.85;   // ground friction multiplier
     this.airResistance = baseStats.airResistance ?? 0.95;
@@ -201,26 +201,25 @@ class CharacterBase {
     if (this.state === 'dead') return;
     if (this.hitlag > 0) { this.hitlag--; return; }
 
-    // Gravity
-    const gravity = map.gravity ?? 0.7;
+    // Stronger gravity = snappier jumps, less floaty
+    const gravity = (map.gravity ?? 0.72) * 1.35;
     const maxFall = this.fastFalling ? this.fastFallSpeed : this.fallSpeed;
     if (!this.onGround) {
       this.vy = Math.min(this.vy + gravity, maxFall);
     }
 
-    // Move
     this.x += this.vx;
     this.y += this.vy;
 
-    // Ground friction
+    // Ground friction — handled in move(); only apply passive decel here when not moving
     if (this.onGround) {
-      const friction = this.state === 'run' ? 0.9 : this.traction;
       if (this.state === 'idle' || this.state === 'land') {
-        this.vx *= friction;
-        if (Math.abs(this.vx) < 0.1) this.vx = 0;
+        this.vx *= 0.55;
+        if (Math.abs(this.vx) < 0.3) this.vx = 0;
       }
     } else {
-      this.vx *= this.airResistance;
+      // Minimal air resistance — keep momentum after hits
+      this.vx *= 0.98;
     }
 
     // Platform collision
@@ -377,11 +376,25 @@ class CharacterBase {
   move(dir) {
     if (!this.canAct()) return;
     if (Math.abs(dir) > 0.1) this.facingRight = dir > 0;
-    const speed = this.onGround ? this.runSpeed : this.airSpeed;
-    this.vx += dir * speed * 0.25;
-    this.vx = Math.max(-speed, Math.min(speed, this.vx));
-    if (this.onGround && this.state !== 'attack') {
-      this.setState(Math.abs(dir) > 0.1 ? 'run' : 'idle');
+
+    if (this.onGround) {
+      if (Math.abs(dir) > 0.1) {
+        // Quick acceleration — feels snappy, not icy
+        this.vx += dir * this.runSpeed * 0.7;
+        this.vx = Math.max(-this.runSpeed, Math.min(this.runSpeed, this.vx));
+        if (this.state !== 'attack') this.setState('run');
+      } else {
+        // Hard stop on no input — no sliding
+        this.vx *= 0.55;
+        if (Math.abs(this.vx) < 0.5) this.vx = 0;
+        if (this.state !== 'attack' && this.state !== 'land') this.setState('idle');
+      }
+    } else {
+      // Air: moderate directional control
+      if (Math.abs(dir) > 0.1) {
+        this.vx += dir * this.airSpeed * 0.18;
+        this.vx = Math.max(-this.airSpeed, Math.min(this.airSpeed, this.vx));
+      }
     }
   }
 
@@ -516,8 +529,10 @@ class CharacterBase {
     this.damageTaken += dmg;
     StatsSystem.recordDamageTaken(dmg);
 
-    // Scale knockback by damage and weight
-    const kbScale = 1 + (this.maxHP - this.hp) / this.maxHP * 0.5;
+    // Knockback scales with how much damage the defender has accumulated
+    // At 0% damage: base knockback. At 100% damage taken: ~2.5x knockback.
+    const dmgRatio = 1 - (this.hp / this.maxHP);           // 0 (fresh) → 1 (near dead)
+    const kbScale  = 1 + dmgRatio * 2.2;                   // 1.0 → 3.2x
     const kbX = hitData.knockbackX * kbScale / this.weight;
     const kbY = hitData.knockbackY * kbScale / this.weight;
     this.vx = kbX;
@@ -649,8 +664,8 @@ class IronKnight extends CharacterBase {
       airSpeed: 4.2,
       fallSpeed: 8.5,
       fastFallSpeed: 13,
-      jumpForce: -15.5,
-      doubleJumpForce: -13,
+      jumpForce: -18.5,
+      doubleJumpForce: -15.5,
       airJumps: 1,
       traction: 0.87,
       airResistance: 0.94,
