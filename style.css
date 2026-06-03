@@ -850,3 +850,19 @@ input::placeholder { color: var(--text2); opacity: 0.6; }
   from { box-shadow: 0 0 0 0 rgba(255,60,95,0.4); }
   to   { box-shadow: 0 0 0 6px rgba(255,60,95,0); }
 }
+
+/* ─── DAMAGE % DISPLAY (Smash-style) ─── */
+.dmg-pct-display {
+  font-family: var(--font-display);
+  font-size: clamp(32px, 5vw, 52px);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: var(--hp-green);
+  text-shadow: 0 0 16px currentColor;
+  transition: color 0.2s, transform 0.1s;
+  margin: 4px 0 2px;
+}
+.dmg-pct-display.bump {
+  transform: scale(1.25);
+}
