@@ -4,14 +4,14 @@
 
 const UI = (() => {
 
-  let currentScreen   = 'lobby';
+  let currentScreen     = 'lobby';
   let selectedCharacter = null;
   let selectedMap       = null;
   let playerName        = 'Fighter';
   let trainingChar      = null;
   let trainingMap       = null;
+  let botSlots          = [];   // array of { slot, characterId:'sandbag' } added by host
 
-  // Match settings (host-owned, synced to guests)
   const matchSettings = { stocks: 3, useTimer: true, timeLimit: 180 };
 
   // ─── INIT ───
@@ -70,12 +70,13 @@ const UI = (() => {
     currentScreen = name;
   }
 
-  // ─── CHARACTER GRID ───
+  // ─── CHARACTER GRID  (never shows Sandbag — it's a bot, not a player character) ───
   function _buildCharacterGrid(containerId = 'char-grid-room') {
     const grid = document.getElementById(containerId);
     if (!grid) return;
     grid.innerHTML = '';
     for (const [id, def] of Object.entries(CHARACTER_REGISTRY)) {
+      if (def.isSandbag) continue;   // ← excluded from player select
       const card = document.createElement('div');
       card.className = 'char-card' + (selectedCharacter === id ? ' selected' : '');
       card.dataset.charId = id;
@@ -132,6 +133,76 @@ const UI = (() => {
     });
   }
 
+  // ─── BOT SLOTS (host only) ───
+  function _refreshBotSlots(roomInfo) {
+    const container = document.getElementById('bot-slots');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const humanCount = roomInfo?.players?.length ?? 1;
+    const maxBots    = 4 - humanCount;
+
+    // Render current bots
+    botSlots.forEach((bot, idx) => {
+      const row = document.createElement('div');
+      row.className = 'bot-row';
+      row.innerHTML = `
+        <span class="bot-label">🥊 Sandbag Bot ${idx + 1}</span>
+        <button class="btn btn-sm btn-secondary bot-remove" data-idx="${idx}">✕ Remove</button>
+      `;
+      container.appendChild(row);
+    });
+
+    // Add bot button (only if room has space)
+    if (botSlots.length < maxBots) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn btn-sm btn-secondary';
+      addBtn.style.marginTop = '6px';
+      addBtn.textContent = '+ Add Sandbag Bot';
+      addBtn.addEventListener('click', () => {
+        botSlots.push({ characterId: 'sandbag' });
+        _refreshBotSlots(Network.getRoomInfo());
+      });
+      container.appendChild(addBtn);
+    }
+
+    // Remove handlers
+    container.querySelectorAll('.bot-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        botSlots.splice(parseInt(btn.dataset.idx), 1);
+        _refreshBotSlots(Network.getRoomInfo());
+      });
+    });
+
+    // Enable/disable start based on humans + bots
+    _updateStartButton(roomInfo);
+  }
+
+  function _updateStartButton(roomInfo) {
+    const startBtn = document.getElementById('btn-start-match');
+    if (!startBtn || !Network.getIsHost()) return;
+
+    const humanPlayers = roomInfo?.players ?? [];
+    const totalPlayers = humanPlayers.length + botSlots.length;
+
+    // All non-host humans must be ready; bots are always "ready"
+    const notReady = humanPlayers.filter(p => !p.ready && p.peerId !== Network.getMyId());
+    const hasMap   = !!roomInfo?.selectedMap;
+    const hasChars = humanPlayers.every(p => !!p.characterId);
+
+    startBtn.disabled = notReady.length > 0 || !hasMap || !hasChars || totalPlayers < 2;
+
+    // Update hint text
+    const hint = document.getElementById('start-hint');
+    if (hint) {
+      if (!hasMap)           hint.textContent = 'Select a stage to begin.';
+      else if (!hasChars)    hint.textContent = 'All players must pick a character.';
+      else if (notReady.length > 0) hint.textContent = `Waiting for ${notReady.map(p=>p.name).join(', ')} to ready up.`;
+      else if (totalPlayers < 2)    hint.textContent = 'Need at least 2 fighters (add a bot or wait for players).';
+      else                          hint.textContent = 'Ready to fight!';
+    }
+  }
+
   // ─── TRAINING MODE ───
   function _startTrainingMode(charId, mapId) {
     const myId = Network.getMyId() || 'local-player';
@@ -139,8 +210,8 @@ const UI = (() => {
       mapId,
       training: true,
       players: [
-        { peerId: myId,            name: playerName,  characterId: charId,    slot: 0 },
-        { peerId: 'sandbag-dummy', name: 'Sandbag',   characterId: 'sandbag', slot: 1 },
+        { peerId: myId,            name: playerName, characterId: charId,    slot: 0 },
+        { peerId: 'sandbag-dummy', name: 'Sandbag',  characterId: 'sandbag', slot: 1 },
       ],
       stocks: 99, timeLimit: 9999, useTimer: false,
     });
@@ -198,7 +269,7 @@ const UI = (() => {
 
     document.getElementById('char-grid-training')?.addEventListener('click', e => {
       const card = e.target.closest('.char-card');
-      if (card && !CHARACTER_REGISTRY[card.dataset.charId]?.isSandbag) {
+      if (card) {
         trainingChar = card.dataset.charId;
         _highlightGridItem('char-grid-training', '.char-card', trainingChar, 'charId');
       }
@@ -254,19 +325,21 @@ const UI = (() => {
     }
   }
 
-  // ─── MATCH SETTINGS (host syncs to guests) ───
+  // ─── SETTINGS DISPLAY ───
   function _refreshSettingsDisplay(roomInfo) {
     const s = roomInfo?.settings;
     if (!s) return;
     const guestEl = document.getElementById('guest-settings-display');
     if (guestEl) {
-      guestEl.innerHTML = `Stocks: <b>${s.stocks ?? 3}</b> &nbsp;|&nbsp; Timer: <b>${s.useTimer !== false ? (s.timeLimit >= 9999 ? '∞' : s.timeLimit + 's') : 'Off'}</b>`;
+      const timeStr = s.useTimer !== false ? (s.timeLimit >= 9999 ? '∞' : s.timeLimit + 's') : 'Off';
+      guestEl.innerHTML = `Stocks: <b>${s.stocks ?? 3}</b> &nbsp;|&nbsp; Timer: <b>${timeStr}</b>`;
     }
     Object.assign(matchSettings, s);
   }
 
-  // ─── ROOM ───
+  // ─── ROOM ENTER ───
   function _onRoomEntered(roomInfo, roomId, isHost) {
+    botSlots = [];  // reset bots when entering a room
     showScreen('room');
     _refreshRoomUI(roomInfo);
 
@@ -285,15 +358,17 @@ const UI = (() => {
     }
 
     document.getElementById('room-title-display').textContent = roomInfo.name;
-
-    // Host/guest visibility
-    document.getElementById('host-controls').style.display   = isHost ? '' : 'none';
-    document.getElementById('match-settings').style.display  = isHost ? '' : 'none';
+    document.getElementById('host-controls').style.display          = isHost ? '' : 'none';
+    document.getElementById('match-settings').style.display         = isHost ? '' : 'none';
+    document.getElementById('bot-slots-section').style.display      = isHost ? '' : 'none';
     document.getElementById('guest-settings-display').style.display = isHost ? 'none' : '';
+
+    if (isHost) _refreshBotSlots(roomInfo);
   }
 
+  // ─── ROOM EVENTS ───
   function _bindRoomEvents() {
-    // Match settings — host only
+    // Match settings
     document.getElementById('setting-stocks')?.addEventListener('click', e => {
       const btn = e.target.closest('.sbtn');
       if (!btn || !Network.getIsHost()) return;
@@ -336,22 +411,36 @@ const UI = (() => {
     document.getElementById('btn-start-match')?.addEventListener('click', () => {
       const roomInfo = Network.getRoomInfo();
       if (!roomInfo) return;
+
+      // Validate humans
       for (const p of roomInfo.players) {
         if (!p.characterId) { toast(`${p.name} hasn't picked a character!`, 'error'); return; }
       }
       if (!roomInfo.selectedMap) { toast('Please select a map!', 'error'); return; }
-      const notReady = roomInfo.players.filter(p => !p.ready && p.peerId !== Network.getMyId());
-      if (notReady.length > 0) { toast('Not all players are ready!', 'error'); return; }
+
+      // Build full player list: humans first, then bots
+      const humanPlayers = roomInfo.players.map((p, i) => ({
+        peerId: p.peerId, name: p.name, characterId: p.characterId, slot: i,
+      }));
+      const botPlayers = botSlots.map((bot, i) => ({
+        peerId: `bot-${i}`,
+        name:   `Sandbag ${i + 1}`,
+        characterId: 'sandbag',
+        slot: humanPlayers.length + i,
+        isBot: true,
+      }));
+      const allPlayers = [...humanPlayers, ...botPlayers];
+
+      if (allPlayers.length < 2) { toast('Need at least 2 fighters. Add a bot or wait for players.', 'error'); return; }
 
       const s = roomInfo.settings || matchSettings;
       Network.sendStartMatch({
         mapId: roomInfo.selectedMap,
-        players: roomInfo.players.map((p, i) => ({
-          peerId: p.peerId, name: p.name, characterId: p.characterId, slot: i,
-        })),
+        players: allPlayers,
         stocks:    s.stocks    ?? 3,
         timeLimit: s.useTimer  ? (s.timeLimit ?? 180) : 9999,
         useTimer:  s.useTimer  ?? true,
+        hasBots:   botPlayers.length > 0,
       });
     });
 
@@ -382,7 +471,7 @@ const UI = (() => {
           <div class="slot-player-name">${_esc(player.name)} ${isMe ? '(you)' : ''}</div>
           <div class="slot-char-name">${charDef ? charDef.emoji + ' ' + charDef.displayName : '—'}</div>
           ${player.ready ? '<span class="slot-ready-badge">READY</span>' : ''}
-          ${i === 0 && roomInfo.hostId === player.peerId ? '<span class="tag tag-host" style="margin-top:4px">HOST</span>' : ''}
+          ${roomInfo.hostId === player.peerId ? '<span class="tag tag-host" style="margin-top:4px">HOST</span>' : ''}
         `;
       } else {
         slotEl.className = 'player-slot';
@@ -397,10 +486,10 @@ const UI = (() => {
       selectedMap = roomInfo.selectedMap;
     }
 
-    const startBtn = document.getElementById('btn-start-match');
-    if (startBtn) {
-      const allReady = roomInfo.players.filter(p => p.peerId !== Network.getMyId()).every(p => p.ready);
-      startBtn.disabled = !allReady || roomInfo.players.length < 2;
+    if (Network.getIsHost()) {
+      _refreshBotSlots(roomInfo);
+    } else {
+      _updateStartButton(roomInfo);
     }
 
     _refreshSettingsDisplay(roomInfo);
@@ -468,8 +557,8 @@ const UI = (() => {
       if      (result === 'win')  { title.textContent = 'VICTORY!'; title.style.background = 'linear-gradient(135deg,#22c55e,#86efac)'; }
       else if (result === 'loss') { title.textContent = 'DEFEAT';   title.style.background = 'linear-gradient(135deg,#ef4444,#fca5a5)'; }
       else                        { title.textContent = 'DRAW';     title.style.background = 'linear-gradient(135deg,#ffb800,#fde68a)'; }
-      title.style.webkitBackgroundClip  = 'text';
-      title.style.webkitTextFillColor   = 'transparent';
+      title.style.webkitBackgroundClip = 'text';
+      title.style.webkitTextFillColor  = 'transparent';
     }
     if (sub) sub.textContent = winner ? winner.playerName + ' wins!' : "It's a draw!";
   }
