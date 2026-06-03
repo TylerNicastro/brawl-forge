@@ -9,6 +9,11 @@ const UI = (() => {
   let selectedCharacter = null;
   let selectedMap = null;
   let playerName = 'Fighter';
+  let trainingChar = null;
+  let trainingMap = null;
+
+  // Match settings (host only — synced to guests via network)
+  const matchSettings = { stocks: 3, useTimer: true, timeLimit: 180 };
 
   // ─── INIT ───
   function init() {
@@ -27,7 +32,7 @@ const UI = (() => {
     // Network events
     Network.on('roomCreated', ({ roomInfo, roomId }) => _onRoomEntered(roomInfo, roomId, true));
     Network.on('roomJoined',  ({ roomInfo }) => _onRoomEntered(roomInfo, null, false));
-    Network.on('roomUpdated', ({ roomInfo }) => _refreshRoomUI(roomInfo));
+    Network.on('roomUpdated', ({ roomInfo }) => { _refreshRoomUI(roomInfo); _refreshSettingsDisplay(roomInfo); });
     Network.on('playerJoined', ({ player }) => toast(`${player.name} joined!`, 'success'));
     Network.on('playerLeft',  ({ player }) => toast(`${player.name} left.`, 'info'));
     Network.on('matchStart',  (config) => Engine.startMatch(config));
@@ -131,8 +136,7 @@ const UI = (() => {
     }
   }
 
-  // ─── LOBBY EVENTS ───
-  function _bindLobbyEvents() {
+  function _bindLobbyEventsInner() {
     // Name
     document.getElementById('player-name-input')?.addEventListener('change', e => {
       playerName = e.target.value.trim() || playerName;
@@ -143,9 +147,8 @@ const UI = (() => {
     document.getElementById('btn-create-room')?.addEventListener('click', async () => {
       const name = document.getElementById('room-name-input')?.value.trim() || `${playerName}'s Room`;
       const pass = document.getElementById('room-pass-input')?.value || '';
-      try {
-        await Network.createRoom(name, pass);
-      } catch (e) { toast(e.message, 'error'); }
+      try { await Network.createRoom(name, pass); }
+      catch (e) { toast(e.message, 'error'); }
     });
 
     // Direct join by ID
@@ -160,11 +163,73 @@ const UI = (() => {
       Network.requestLobbyRooms();
       toast('Refreshing rooms…', 'info');
     });
-
-    // Stats tab
-    document.getElementById('btn-view-stats')?.addEventListener('click', () => _buildStatsPanel());
-    document.getElementById('btn-export-stats')?.addEventListener('click', () => StatsSystem.exportJSON());
   }
+
+  function _bindLobbyEvents() {
+    _bindLobbyEventsInner();
+
+    // Training mode
+    document.getElementById('btn-training')?.addEventListener('click', () => {
+      _buildCharacterGrid('char-grid-training');
+      _buildMapGrid('map-grid-training');
+      // Default selections
+      if (!trainingChar) trainingChar = Object.keys(CHARACTER_REGISTRY).find(k => !CHARACTER_REGISTRY[k].isSandbag);
+      if (!trainingMap)  trainingMap  = Object.keys(MAP_REGISTRY)[0];
+      _highlightGridItem('char-grid-training', '.char-card', '[data-char-id]', trainingChar, 'charId');
+      _highlightGridItem('map-grid-training',  '.map-card',  '[data-map-id]',  trainingMap,  'mapId');
+      document.getElementById('training-modal').style.display = 'flex';
+    });
+    document.getElementById('training-cancel-btn')?.addEventListener('click', () => {
+      document.getElementById('training-modal').style.display = 'none';
+    });
+    document.getElementById('training-start-btn')?.addEventListener('click', () => {
+      if (!trainingChar) { toast('Pick a character!', 'error'); return; }
+      if (!trainingMap)  { toast('Pick a stage!', 'error');     return; }
+      document.getElementById('training-modal').style.display = 'none';
+      _startTrainingMode(trainingChar, trainingMap);
+    });
+    // Training char/map selection
+    document.getElementById('char-grid-training')?.addEventListener('click', e => {
+      const card = e.target.closest('.char-card');
+      if (card && !CHARACTER_REGISTRY[card.dataset.charId]?.isSandbag) {
+        trainingChar = card.dataset.charId;
+        _highlightGridItem('char-grid-training', '.char-card', '[data-char-id]', trainingChar, 'charId');
+      }
+    });
+    document.getElementById('map-grid-training')?.addEventListener('click', e => {
+      const card = e.target.closest('.map-card');
+      if (card) {
+        trainingMap = card.dataset.mapId;
+        _highlightGridItem('map-grid-training', '.map-card', '[data-map-id]', trainingMap, 'mapId');
+      }
+    });
+  }
+
+  function _highlightGridItem(gridId, cardSel, attrSel, val, dataKey) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.querySelectorAll(cardSel).forEach(c => {
+      c.classList.toggle('selected', c.dataset[dataKey] === val);
+    });
+  }
+
+  function _startTrainingMode(charId, mapId) {
+    const myId = Network.getMyId() || 'local-player';
+    const config = {
+      mapId,
+      training: true,
+      players: [
+        { peerId: myId, name: playerName, characterId: charId, slot: 0 },
+        { peerId: 'sandbag-dummy', name: 'Sandbag', characterId: 'sandbag', slot: 1 },
+      ],
+      stocks: 99,
+      timeLimit: 9999,
+      useTimer: false,
+    };
+    Engine.startMatch(config);
+  }
+
+  function _bindLobbyEventsInner() {
 
   function _promptJoin(roomId, hasPassword) {
     if (hasPassword) {
@@ -209,6 +274,18 @@ const UI = (() => {
     }
   }
 
+  function _refreshSettingsDisplay(roomInfo) {
+    const s = roomInfo?.settings;
+    if (!s) return;
+    // Update guest view
+    const guestEl = document.getElementById('guest-settings-display');
+    if (guestEl) {
+      guestEl.innerHTML = `Stocks: <b>${s.stocks ?? 3}</b> &nbsp;|&nbsp; Timer: <b>${s.useTimer ? s.timeLimit + 's' : 'Off'}</b>`;
+    }
+    // Sync matchSettings locally (for when this client is host)
+    Object.assign(matchSettings, s);
+  }
+
   // ─── ROOM ───
   function _onRoomEntered(roomInfo, roomId, isHost) {
     showScreen('room');
@@ -237,9 +314,48 @@ const UI = (() => {
 
     const isHostEl = document.getElementById('host-controls');
     if (isHostEl) isHostEl.style.display = isHost ? '' : 'none';
+
+    // Show settings panel for host, read-only display for guest
+    const settingsPanel = document.getElementById('match-settings');
+    const guestDisplay  = document.getElementById('guest-settings-display');
+    if (settingsPanel) settingsPanel.style.display = isHost ? '' : 'none';
+    if (guestDisplay)  guestDisplay.style.display  = isHost ? 'none' : '';
   }
 
   function _bindRoomEvents() {
+    // Match settings (host only — buttons in #match-settings)
+    document.getElementById('setting-stocks')?.addEventListener('click', e => {
+      const btn = e.target.closest('.sbtn');
+      if (!btn || !Network.getIsHost()) return;
+      document.querySelectorAll('#setting-stocks .sbtn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      matchSettings.stocks = parseInt(btn.dataset.val);
+      Network.sendRoomSettings({ stocks: matchSettings.stocks });
+    });
+    document.getElementById('setting-timer')?.addEventListener('click', e => {
+      const btn = e.target.closest('.sbtn');
+      if (!btn || !Network.getIsHost()) return;
+      document.querySelectorAll('#setting-timer .sbtn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      matchSettings.useTimer = btn.dataset.val === '1';
+      document.getElementById('timelimit-row').style.display = matchSettings.useTimer ? '' : 'none';
+      Network.sendRoomSettings({ useTimer: matchSettings.useTimer });
+    });
+    document.getElementById('setting-timelimit')?.addEventListener('click', e => {
+      const btn = e.target.closest('.sbtn');
+      if (!btn || !Network.getIsHost()) return;
+      document.querySelectorAll('#setting-timelimit .sbtn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      matchSettings.timeLimit = parseInt(btn.dataset.val);
+      Network.sendRoomSettings({ timeLimit: matchSettings.timeLimit });
+    });
+
+    // Disable settings inputs for guests
+    if (!Network.getIsHost()) {
+      document.getElementById('match-settings').style.display = 'none';
+      document.getElementById('guest-settings-display').style.display = '';
+    }
+
     // Ready toggle
     document.getElementById('btn-ready')?.addEventListener('click', () => {
       const roomInfo = Network.getRoomInfo();
@@ -266,16 +382,15 @@ const UI = (() => {
         toast('Not all players are ready!', 'error'); return;
       }
 
+      const roomSettings = roomInfo.settings || matchSettings;
       const config = {
         mapId: roomInfo.selectedMap,
         players: roomInfo.players.map((p, i) => ({
-          peerId: p.peerId,
-          name: p.name,
-          characterId: p.characterId,
-          slot: i,
+          peerId: p.peerId, name: p.name, characterId: p.characterId, slot: i,
         })),
-        stocks: 3,
-        timeLimit: 180,
+        stocks:    roomSettings.stocks    ?? 3,
+        timeLimit: roomSettings.useTimer  ? (roomSettings.timeLimit ?? 180) : 9999,
+        useTimer:  roomSettings.useTimer  ?? true,
       };
       Network.sendStartMatch(config);
     });
