@@ -290,18 +290,59 @@
 <!-- ═══════════════════════════════════════════ -->
 <!--  SCRIPTS                                   -->
 <!-- ═══════════════════════════════════════════ -->
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="stats.js"></script>
-<script src="network.js"></script>
-<script src="characters/base.js"></script>
-<script src="characters/iron_knight.js"></script>
-<script src="maps/platform_kingdom.js"></script>
-<script src="engine.js"></script>
-<script src="ui.js"></script>
+
+<!-- Failsafe: show lobby immediately so the page is never blank -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const lobby = document.getElementById('screen-lobby');
+    if (lobby) { lobby.style.display = 'flex'; lobby.style.flexDirection = 'column'; lobby.style.alignItems = 'center'; }
+  });
+</script>
+
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"
+  onerror="console.error('Failed to load PeerJS CDN — check your internet connection.')"></script>
+<script src="stats.js"
+  onerror="console.error('Failed to load stats.js — check the file exists in your repo root.')"></script>
+<script src="network.js"
+  onerror="console.error('Failed to load network.js — check the file exists in your repo root.')"></script>
+<script src="characters/base.js"
+  onerror="console.error('Failed to load characters/base.js — make sure the characters/ folder uploaded correctly.')"></script>
+<script src="characters/iron_knight.js"
+  onerror="console.error('Failed to load characters/iron_knight.js — make sure the characters/ folder uploaded correctly.')"></script>
+<script src="maps/platform_kingdom.js"
+  onerror="console.error('Failed to load maps/platform_kingdom.js — make sure the maps/ folder uploaded correctly.')"></script>
+<script src="engine.js"
+  onerror="console.error('Failed to load engine.js — check the file exists in your repo root.')"></script>
+<script src="ui.js"
+  onerror="console.error('Failed to load ui.js — check the file exists in your repo root.')"></script>
 
 <script>
 // ─── BOOTSTRAP ───
 window.addEventListener('DOMContentLoaded', () => {
+  // Check all required globals loaded
+  const missing = [];
+  if (typeof StatsSystem === 'undefined') missing.push('stats.js');
+  if (typeof Network     === 'undefined') missing.push('network.js');
+  if (typeof CharacterBase === 'undefined') missing.push('characters/base.js');
+  if (typeof CHARACTER_REGISTRY === 'undefined') missing.push('characters/iron_knight.js');
+  if (typeof MAP_REGISTRY === 'undefined') missing.push('maps/platform_kingdom.js');
+  if (typeof Engine === 'undefined') missing.push('engine.js');
+  if (typeof UI === 'undefined') missing.push('ui.js');
+
+  if (missing.length > 0) {
+    const lobby = document.getElementById('screen-lobby');
+    if (lobby) {
+      const err = document.createElement('div');
+      err.style.cssText = 'background:#1a0a0a;border:1px solid #ef4444;color:#ef4444;padding:20px;border-radius:8px;font-family:monospace;font-size:13px;max-width:600px;margin:20px auto;line-height:1.8';
+      err.innerHTML = '<strong>⚠️ Some files failed to load:</strong><br>' +
+        missing.map(f => `• <code>${f}</code>`).join('<br>') +
+        '<br><br>Check your GitHub repo and make sure these files and folders exist exactly as listed (case-sensitive). See browser Console (F12) for details.';
+      lobby.insertBefore(err, lobby.querySelector('.lobby-grid'));
+    }
+    console.error('BrawlForge: Missing scripts:', missing);
+    return;
+  }
+
   // Init canvas engine
   Engine.init(document.getElementById('game-canvas'));
 
