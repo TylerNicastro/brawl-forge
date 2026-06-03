@@ -866,3 +866,49 @@ input::placeholder { color: var(--text2); opacity: 0.6; }
 .dmg-pct-display.bump {
   transform: scale(1.25);
 }
+
+/* ─── MATCH SETTINGS ─── */
+#match-settings { margin-bottom: 14px; }
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+.setting-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text2);
+  min-width: 72px;
+}
+.setting-btns { display: flex; gap: 5px; }
+.sbtn {
+  padding: 5px 10px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sbtn:hover { border-color: var(--accent3); color: var(--accent3); }
+.sbtn.active {
+  background: var(--accent4);
+  border-color: var(--accent4);
+  color: #fff;
+}
+
+/* ─── SANDBAG CARD STYLING ─── */
+.char-card[data-char-id="sandbag"] {
+  border-color: #8a6a44;
+  opacity: 0.85;
+}
+.char-card[data-char-id="sandbag"]:hover {
+  border-color: #c8a87a;
+}
+.char-card[data-char-id="sandbag"] .char-type {
+  color: #c8a87a;
+}
