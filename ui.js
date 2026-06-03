@@ -41,6 +41,9 @@ const UI = (() => {
       toast(`🏆 Achievement: ${e.detail.name} — ${e.detail.desc}`, 'success');
     });
 
+    // Init settings / keybinding UI
+    SettingsUI.init();
+
     // Connect to PeerJS
     _connectPeer();
 
