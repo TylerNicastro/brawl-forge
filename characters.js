@@ -92,6 +92,11 @@ class CharacterBase {
     this.damageTaken = 0;
     this.kills = 0;
 
+    // Status effects
+    this.burnTimer   = 0;    // frames remaining on burn
+    this.burnDamage  = 0.4;  // HP per frame while burning
+    this.burnTraction = 0;   // traction penalty while burning
+
     // Animation state
     this.animFrame = 0;
     this.animTimer = 0;
@@ -214,11 +219,12 @@ class CharacterBase {
     // Ground friction — handled in move(); only apply passive decel here when not moving
     if (this.onGround) {
       if (this.state === 'idle' || this.state === 'land') {
-        this.vx *= 0.55;
+        // Burn reduces traction (slippery while on fire)
+        const frictionMul = this.burnTimer > 0 ? 0.82 : 0.55;
+        this.vx *= frictionMul;
         if (Math.abs(this.vx) < 0.3) this.vx = 0;
       }
     } else {
-      // Minimal air resistance — keep momentum after hits
       this.vx *= 0.98;
     }
 
@@ -279,6 +285,15 @@ class CharacterBase {
     // State timers
     this.stateTimer--;
     if (this.hitstun > 0) this.hitstun--;
+
+    // ── BURN STATUS ──
+    if (this.burnTimer > 0) {
+      this.burnTimer--;
+      this.hp = Math.max(0.1, this.hp - this.burnDamage);
+      // Orange fire flicker every 8 frames
+      if (this.burnTimer % 8 === 0) this.spawnParticles(this.x, this.y - 20, this.burnTimer % 16 < 8 ? '#ff6600' : '#ffcc00', 3, 2);
+      if (this.burnTimer <= 0) this.burnTraction = 0;
+    }
     if (this.landLag > 0) {
       this.landLag--;
       if (this.landLag <= 0 && this.state === 'land') this.setState('idle');
@@ -351,6 +366,18 @@ class CharacterBase {
 
   // ─── ACTIONS ───
   jump() {
+    // Allow cancelling fspecial dash into jump
+    if (this._cancelIntoJump && this.state === 'attack') {
+      this._cancelIntoJump = false;
+      this.attackTimer = 0;
+      this.hitboxActive = false;
+      this.currentAttack = null;
+      this.setState('jump');
+      this.vy = this.jumpForce;
+      this.onGround = false;
+      this.spawnParticles(this.x, this.y + this.size.h/2, '#ffaa44', 5, 3);
+      return true;
+    }
     if (!this.canAct()) return false;
     if (this.onGround) {
       this.vy = this.jumpForce;
@@ -445,6 +472,21 @@ class CharacterBase {
     // Optional: apply move-forward on attack
     if (ability.moveForward && this.onGround) {
       this.vx += (this.facingRight ? 1 : -1) * (ability.moveForward ?? 2);
+    }
+
+    // Recovery special: burst upward and reset air jump
+    if (ability.isRecovery) {
+      this.vy = ability.recoveryVY ?? -20;
+      this.vx = (this.facingRight ? 1 : -1) * (ability.recoveryVX ?? 0);
+      this.onGround = false;
+      this.airJumpsLeft = this.airJumps; // restore air jump so you always get height
+      if (ability.invincibleStartup) { this.invincible = true; this.invincibleTimer = (ability.startup ?? 4) + 6; }
+    }
+
+    // cancelIntoJump: allow jump to interrupt the attack mid-duration
+    if (ability.cancelIntoJump) {
+      this._cancelIntoJump = true;
+      setTimeout(() => { this._cancelIntoJump = false; }, (ability.duration ?? 20) * 16);
     }
 
     // Visual effect
@@ -546,6 +588,12 @@ class CharacterBase {
 
     // Flash red effect
     this.spawnParticles(this.x, this.y, '#ff4444', 8, 4);
+
+    // Status effect application
+    if (hitData.applyStatus === 'burn') {
+      this.burnTimer = 180;  // 3 seconds at 60fps
+      this.spawnParticles(this.x, this.y, '#ff6600', 10, 5);
+    }
 
     return true; // hit landed
   }
@@ -790,18 +838,26 @@ class IronKnight extends CharacterBase {
         cooldown: 40, isProjectile: true,
       },
       fspecial: {
-        name: 'Blade Dash', desc: 'Lunging dash attack through opponents.',
-        damage: 14, startup: 8, active: 14, duration: 34,
-        knockbackX: 9, knockbackY: -5, hitstun: 20,
-        radius: 26, offsetX: 30, offsetY: 0,
-        cooldown: 50, moveForward: 12,
+        name: 'Flame Dash', desc: 'Ignites sword and dashes forward. Applies BURN status on hit — 3s of ticking fire damage and reduced traction. Can cancel into jump mid-dash for movement tech.',
+        damage: 10, startup: 6, active: 16, duration: 36,
+        knockbackX: 6, knockbackY: -3, hitstun: 14,
+        radius: 28, offsetX: 26, offsetY: 0,
+        cooldown: 55, moveForward: 14,
+        applyStatus: 'burn',   // engine applies burn status to defender
+        effect: 'flameDash',
+        cancelIntoJump: true,  // engine allows jump input to cancel mid-dash
       },
       uspecial: {
-        name: 'Rising Knight', desc: 'Upward spinning recovery move. Invincible startup.',
-        damage: 16, startup: 5, active: 18, duration: 44,
-        knockbackX: 3, knockbackY: -14, hitstun: 24,
-        radius: 28, offsetX: 0, offsetY: -30,
-        cooldown: 70,
+        name: 'Rising Knight', desc: 'Recovery uppercut. Launches Knight straight up with invincible startup. Resets air jump. Strong vertical knockback on hit.',
+        damage: 14, startup: 4, active: 20, duration: 50,
+        knockbackX: 2, knockbackY: -18, hitstun: 28,
+        radius: 30, offsetX: 0, offsetY: -36,
+        cooldown: 90,
+        isRecovery: true,      // engine applies special vertical launch + resets airJumpsLeft
+        recoveryVY: -22,       // strong upward burst
+        recoveryVX: 0,         // no horizontal drift (pure vertical)
+        invincibleStartup: true,
+        effect: 'risingKnight',
       },
       dspecial: {
         name: 'Shield Bash', desc: 'Counter move. If hit during startup, reflects and strikes back.',
@@ -1026,25 +1082,43 @@ class IronKnight extends CharacterBase {
       ctx.globalAlpha = 1;
     }
 
+    // Burn orange aura
+    if (this.burnTimer > 0) {
+      const pulse = 0.15 + 0.1 * Math.sin(Date.now() * 0.015);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#ff6600';
+      this._roundRect(ctx, -w/2 - 4, -h/2 - 4, w + 8, h + 8, 10);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
     this.renderEffect(ctx);
   }
 
   triggerEffect(effectName) {
     if (effectName === 'swordBeam') {
-      this.spawnParticles(
-        this.x + (this.facingRight ? 60 : -60),
-        this.y - 10, '#aaddff', 8, 5
-      );
+      this.spawnParticles(this.x + (this.facingRight ? 60 : -60), this.y - 10, '#aaddff', 8, 5);
     }
-    if (effectName === 'bladeDash') {
-      for (let i = 0; i < 5; i++) {
-        const ox = (this.facingRight ? -1 : 1) * i * 10;
-        this.spawnParticles(this.x + ox, this.y, '#4488ff', 3, 2);
+    if (effectName === 'flameDash') {
+      // Trail of orange/yellow fire particles behind the knight
+      for (let i = 0; i < 7; i++) {
+        const ox = (this.facingRight ? -1 : 1) * i * 9;
+        this.spawnParticles(this.x + ox, this.y, i % 2 === 0 ? '#ff6600' : '#ffcc00', 3, 3);
       }
     }
     if (effectName === 'risingKnight') {
-      this.spawnParticles(this.x, this.y, '#ffcc44', 12, 6);
+      this.spawnParticles(this.x, this.y, '#ffcc44', 16, 7);
+      // Extra upward gold streak
+      for (let i = 0; i < 5; i++) {
+        this.effects.push({
+          x: this.x + (Math.random()-0.5)*20,
+          y: this.y - i * 12,
+          vx: (Math.random()-0.5)*2,
+          vy: -4 - Math.random()*3,
+          r: 5, color: '#ffe066', alpha: 1, fadeSpeed: 0.06, growSpeed: -0.08,
+        });
+      }
     }
   }
 }
@@ -1058,5 +1132,156 @@ CHARACTER_REGISTRY['iron_knight'] = {
   archetype: 'Balanced',
   description: 'A stalwart warrior with powerful sword strikes and sturdy armor.',
   Class: IronKnight,
+};
+window.CHARACTER_REGISTRY = CHARACTER_REGISTRY;
+
+// ═══════════════════════════════════════════════════════════
+//  CHARACTER: SANDBAG
+//  The classic training dummy. Infinite stocks, never fights
+//  back, absorbs all damage to let you practice combos.
+//  Select via the "Training" button in the lobby.
+// ═══════════════════════════════════════════════════════════
+
+class Sandbag extends CharacterBase {
+  constructor(config = {}) {
+    super({
+      id: 'sandbag',
+      displayName: 'Sandbag',
+      emoji: '🥊',
+      colorPrimary: '#c8a87a',
+      colorSecondary: '#8a6a44',
+      description: 'The training dummy. Never fights back. Perfect for testing combos and move feel.',
+      archetype: 'Dummy',
+      ...config,
+    });
+    this._wobble = 0;
+    this._stitchPhase = 0;
+  }
+
+  defineStats() {
+    return {
+      maxHP: 999,
+      weight: 1.8,        // heavy — doesn't fly too far
+      walkSpeed: 0,
+      runSpeed: 0,
+      airSpeed: 0,
+      fallSpeed: 10,
+      fastFallSpeed: 10,
+      jumpForce: 0,
+      doubleJumpForce: 0,
+      airJumps: 0,
+      traction: 0.5,
+      airResistance: 0.96,
+      size: { w: 48, h: 70 },
+    };
+  }
+
+  defineAbilities() { return {}; }   // no attacks
+
+  // Sandbag never acts — override canAct to always return false
+  canAct()   { return false; }
+  canAttack(){ return false; }
+
+  // Sandbag has infinite stocks — it never truly dies
+  die() {
+    // Reset after 1s instead of consuming a stock
+    this.setState('dead');
+    this.hitboxActive = false;
+    this.spawnParticles(this.x, this.y, '#c8a87a', 12, 5);
+    setTimeout(() => this.respawn(this.spawnX ?? 600, this.spawnY ?? 200), 1000);
+  }
+
+  render(ctx) {
+    const { w, h } = this.size;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    // Wobble when hit
+    if (this._wobble > 0) {
+      ctx.rotate(Math.sin(this._wobble * 0.5) * 0.12);
+      this._wobble--;
+    }
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(0, h/2 + 2, w * 0.45, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bag body (rounded rect)
+    const grad = ctx.createLinearGradient(-w/2, -h/2, w/2, h/2);
+    grad.addColorStop(0, '#d4b48a');
+    grad.addColorStop(0.5, '#c8a87a');
+    grad.addColorStop(1, '#a88a5a');
+    ctx.fillStyle = grad;
+    ctx.strokeStyle = '#7a5a30';
+    ctx.lineWidth = 2;
+    this._roundRect(ctx, -w/2, -h/2, w, h, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    // Stitching lines (horizontal bands)
+    ctx.strokeStyle = '#7a5a30';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    for (let i = 1; i < 4; i++) {
+      const ly = -h/2 + (h / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(-w/2 + 6, ly);
+      ctx.lineTo(w/2 - 6, ly);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // Top rope/cap
+    ctx.fillStyle = '#5a3a18';
+    this._roundRect(ctx, -w/2 + 4, -h/2 - 6, w - 8, 14, 4);
+    ctx.fill();
+
+    // Rope knot
+    ctx.fillStyle = '#3a2010';
+    ctx.beginPath();
+    ctx.arc(0, -h/2 - 14, 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Burn effect
+    if (this.burnTimer > 0) {
+      const pulse = 0.18 + 0.08 * Math.sin(Date.now() * 0.015);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = '#ff6600';
+      this._roundRect(ctx, -w/2 - 4, -h/2 - 4, w + 8, h + 8, 14);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Invincible flash
+    if (this.invincible && Math.floor(Date.now() / 80) % 2 === 0) {
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#88ccff';
+      this._roundRect(ctx, -w/2, -h/2, w, h, 12);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+    this.renderEffect(ctx);
+  }
+
+  // Sandbag wobbles when hit
+  takeHit(hitData) {
+    const result = super.takeHit(hitData);
+    if (result) this._wobble = 20;
+    return result;
+  }
+}
+
+CHARACTER_REGISTRY['sandbag'] = {
+  id: 'sandbag',
+  displayName: 'Sandbag',
+  emoji: '🥊',
+  archetype: 'Dummy',
+  description: 'Training dummy. Never attacks. Infinite stocks. Great for practicing combos.',
+  Class: Sandbag,
+  isSandbag: true,   // flag so UI can mark it specially
 };
 window.CHARACTER_REGISTRY = CHARACTER_REGISTRY;
