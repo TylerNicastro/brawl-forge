@@ -27,24 +27,9 @@ const Engine = (() => {
   // Camera
   const camera = { x: 0, y: 0, scale: 1, targetX: 0, targetY: 0 };
 
-  // Input state
+  // Input state — stores raw key values (KeyboardEvent.key, lowercased)
   const keys = {};
   const prevKeys = {};
-  const INPUT_MAP = {
-    // Player 1 (WASD + specials)
-    p1: {
-      left:    ['ArrowLeft', 'KeyA'],
-      right:   ['ArrowRight', 'KeyD'],
-      up:      ['ArrowUp', 'KeyW'],
-      down:    ['ArrowDown', 'KeyS'],
-      jump:    ['ArrowUp', 'KeyW', 'Space'],
-      attack:  ['KeyJ', 'KeyZ'],
-      special: ['KeyK', 'KeyX'],
-      grab:    ['KeyL', 'KeyC'],
-      shield:  ['KeyU', 'ShiftLeft'],
-      dodge:   ['KeyI', 'ShiftRight'],
-    }
-  };
 
   // Double-tap run detection
   const tapTracker = {};
@@ -170,80 +155,77 @@ const Engine = (() => {
   // ─── INPUT ───
   function _setupInput() {
     window.addEventListener('keydown', e => {
-      if (!keys[e.code]) {
-        // Double-tap detection for run
+      const k = e.key;
+      if (!keys[k]) {
         const now = Date.now();
-        if (tapTracker[e.code] && now - tapTracker[e.code] < 200) {
-          keys[e.code + '_double'] = true;
-        }
-        tapTracker[e.code] = now;
+        if (tapTracker[k] && now - tapTracker[k] < 200) keys[k + '_double'] = true;
+        tapTracker[k] = now;
       }
-      keys[e.code] = true;
-      e.preventDefault && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code) && e.preventDefault();
+      keys[k] = true;
+      // Prevent scroll on arrow keys / space
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(k)) e.preventDefault();
     });
     window.addEventListener('keyup', e => {
-      keys[e.code] = false;
-      keys[e.code + '_double'] = false;
+      keys[e.key] = false;
+      keys[e.key + '_double'] = false;
     });
   }
 
-  function _key(code) { return !!keys[code]; }
-  function _justPressed(code) { return keys[code] && !prevKeys[code]; }
+  // Check if any key bound to action is currently held
+  function _action(action) {
+    const bound = Keybindings.get(action);
+    return bound.some(k => !!keys[k]);
+  }
+  // Check if any key bound to action was just pressed this frame
+  function _actionJust(action) {
+    const bound = Keybindings.get(action);
+    return bound.some(k => keys[k] && !prevKeys[k]);
+  }
 
   function _processInput() {
     if (!localPlayer || localPlayer.state === 'dead') return;
 
     const p = localPlayer;
-    const m = INPUT_MAP.p1;
 
-    // Horizontal movement
-    const left  = m.left.some(k => _key(k));
-    const right  = m.right.some(k => _key(k));
-    const down  = m.down.some(k => _key(k));
-    const up    = m.up.some(k => _key(k));
+    // Directional state
+    const left   = _action('left');
+    const right  = _action('right');
+    const down   = _action('down');
+    const up     = _action('up');
 
     const dirX = (right ? 1 : 0) - (left ? 1 : 0);
     const dirY = (down  ? 1 : 0) - (up   ? 1 : 0);
 
     // Shield
-    const shieldHeld = m.shield.some(k => _key(k));
-    if (shieldHeld && !m.dodge.some(k => _key(k))) {
+    const shieldHeld = _action('shield') || _action('shield2');
+    if (shieldHeld && !(_action('dodge') || _action('dodge2'))) {
       p.shield(true);
     } else {
       p.shield(false);
     }
 
-    // Movement (not during shield)
-    if (!p.shielding) {
-      p.move(dirX);
-    }
+    // Movement
+    if (!p.shielding) p.move(dirX);
 
     // Fast fall
-    if (down && !p.onGround && p.vy > 0) p.fastFall();
+    if ((down || _action('fastfall')) && !p.onGround && p.vy > 0) p.fastFall();
 
     // Drop through platform
-    if (down && p.onGround && m.down.some(k => _justPressed(k))) {
-      p.dropThrough();
-    }
+    if (down && p.onGround && _actionJust('down')) p.dropThrough();
 
     // Jump
-    if (m.jump.some(k => _justPressed(k))) {
-      p.jump();
-    }
+    if (_actionJust('up') || _actionJust('jump')) p.jump();
 
     // Dodge / airdodge
-    if (m.dodge.some(k => _justPressed(k))) {
-      if (p.onGround) {
-        p.dodge(dirX);
-      } else {
-        p.airDodge(dirX || 0, dirY || 0);
-      }
+    if (_actionJust('dodge') || _actionJust('dodge2')) {
+      if (p.onGround) p.dodge(dirX);
+      else p.airDodge(dirX || 0, dirY || 0);
     }
 
-    // ── ATTACK DISPATCH ──
-    const attackJust  = m.attack.some(k => _justPressed(k));
-    const specialJust = m.special.some(k => _justPressed(k));
-    const grabJust    = m.grab.some(k => _justPressed(k));
+    // Attack dispatch
+    const attackJust  = _actionJust('attack')  || _actionJust('attack2');
+    const specialJust = _actionJust('special') || _actionJust('special2');
+    const grabJust    = _actionJust('grab')    || _actionJust('grab2');
 
     if (grabJust) {
       _tryAttack(p, 'grab', dirX, dirY);
@@ -256,13 +238,13 @@ const Engine = (() => {
     // Broadcast input to network
     const inputSnap = {
       dirX, dirY, attackJust, specialJust, grabJust,
-      shieldHeld, jump: m.jump.some(k => _justPressed(k)),
+      shieldHeld, jump: _actionJust('up') || _actionJust('jump'),
       x: p.x, y: p.y, vx: p.vx, vy: p.vy,
       state: p.state, facingRight: p.facingRight,
     };
     Network.sendGameInput(inputSnap);
 
-    // Store prev keys
+    // Store prev keys snapshot
     Object.assign(prevKeys, keys);
   }
 
