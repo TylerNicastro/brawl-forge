@@ -46,6 +46,8 @@ body {
 /* ─── SCREENS ─── */
 .screen { display: none; width: 100%; min-height: 100vh; }
 .screen.active { display: flex; flex-direction: column; align-items: center; }
+/* Lobby shows by default until JS takes over */
+#screen-lobby { display: flex; flex-direction: column; align-items: center; }
 
 /* ─── LOBBY HERO ─── */
 #screen-lobby {
