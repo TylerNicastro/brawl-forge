@@ -31,6 +31,8 @@
       <button class="btn btn-secondary" id="btn-view-stats">↻ Refresh Stats</button>
       <div style="height:8px"></div>
       <button class="btn btn-secondary" id="btn-export-stats">⬇ Export JSON</button>
+      <div style="height:8px"></div>
+      <button class="btn btn-secondary" id="btn-open-settings">⚙️ Key Bindings</button>
     </div>
 
     <!-- Create Room -->
@@ -68,21 +70,8 @@
     <!-- Controls reference -->
     <div class="panel">
       <div class="panel-title"><span class="icon">🎮</span> Controls</div>
-      <div class="controls-grid">
-        <div class="ctrl-row"><span class="ctrl-label">Move</span><span class="ctrl-key">A / D or ←/→</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Jump</span><span class="ctrl-key">W / ↑ / Space</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Attack</span><span class="ctrl-key">J or Z</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Special</span><span class="ctrl-key">K or X</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Grab</span><span class="ctrl-key">L or C</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Shield</span><span class="ctrl-key">U or L-Shift</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Dodge</span><span class="ctrl-key">I or R-Shift</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Fast Fall</span><span class="ctrl-key">S / ↓ (in air)</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Drop Thru</span><span class="ctrl-key">↓ (on platform)</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Jab Combo</span><span class="ctrl-key">J ×3</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">F-Smash</span><span class="ctrl-key">J + → (hold)</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">U-Special</span><span class="ctrl-key">K + ↑</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Air Dodge</span><span class="ctrl-key">I + direction</span></div>
-        <div class="ctrl-row"><span class="ctrl-label">Bair</span><span class="ctrl-key">J + back (air)</span></div>
+      <div class="controls-grid" id="controls-display">
+        <!-- populated by ui.js from keybindings -->
       </div>
       <hr class="divider">
       <div style="font-size:11px;color:var(--text2);font-family:var(--font-mono);line-height:1.7">
@@ -94,7 +83,6 @@
 
   </div>
 
-  <!-- Status bar -->
   <div class="status-bar">
     <div class="status-dot connecting" id="status-dot"></div>
     <span id="status-text">Connecting…</span>
@@ -119,9 +107,7 @@
 
   <div class="room-layout">
 
-    <!-- Left: slots + characters + map -->
     <div>
-      <!-- Player slots -->
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-title"><span class="icon">👥</span> Players</div>
         <div class="player-slots">
@@ -132,33 +118,27 @@
         </div>
       </div>
 
-      <!-- Character select -->
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-title"><span class="icon">⚔️</span> Choose Fighter</div>
         <div class="char-grid" id="char-grid-room"></div>
         <div id="char-desc" style="margin-top:12px;font-size:12px;color:var(--text2);font-family:var(--font-mono);min-height:36px"></div>
       </div>
 
-      <!-- Map select -->
       <div class="panel">
         <div class="panel-title"><span class="icon">🗺️</span> Choose Stage <span style="font-size:11px;color:var(--text2);font-weight:normal;margin-left:6px">(Host only)</span></div>
         <div class="map-grid" id="map-grid-room"></div>
       </div>
     </div>
 
-    <!-- Right: start / chat -->
     <div style="display:flex;flex-direction:column;gap:16px">
-
-      <!-- Start (host only) -->
       <div class="panel" id="host-controls">
         <div class="panel-title"><span class="icon">🚀</span> Host Controls</div>
         <p style="font-size:12px;color:var(--text2);margin-bottom:14px;font-family:var(--font-mono)">
-          All guests must ready up before you can start. Select a stage and begin!
+          All guests must ready up before you can start.
         </p>
         <button class="btn btn-gold" id="btn-start-match" disabled>▶ Start Match</button>
       </div>
 
-      <!-- Chat -->
       <div class="panel" style="flex:1;display:flex;flex-direction:column">
         <div class="panel-title"><span class="icon">💬</span> Chat</div>
         <div id="chat-log" style="flex:1;min-height:120px;max-height:200px;overflow-y:auto;margin-bottom:10px;padding:4px"></div>
@@ -168,17 +148,9 @@
         </div>
       </div>
 
-      <!-- Controls quick ref -->
       <div class="panel">
         <div class="panel-title" style="font-size:14px"><span class="icon">🎮</span> Quick Controls</div>
-        <div class="controls-grid" style="font-size:11px">
-          <div class="ctrl-row"><span class="ctrl-label">Attack</span><span class="ctrl-key">J / Z</span></div>
-          <div class="ctrl-row"><span class="ctrl-label">Special</span><span class="ctrl-key">K / X</span></div>
-          <div class="ctrl-row"><span class="ctrl-label">Grab</span><span class="ctrl-key">L / C</span></div>
-          <div class="ctrl-row"><span class="ctrl-label">Shield</span><span class="ctrl-key">U / L-Shift</span></div>
-          <div class="ctrl-row"><span class="ctrl-label">Dodge</span><span class="ctrl-key">I / R-Shift</span></div>
-          <div class="ctrl-row"><span class="ctrl-label">Jump</span><span class="ctrl-key">W / Space</span></div>
-        </div>
+        <div class="controls-grid" id="controls-display-room" style="font-size:11px"></div>
       </div>
     </div>
   </div>
@@ -194,60 +166,92 @@
 <!-- ═══════════════════════════════════════════ -->
 <div id="screen-game" class="screen">
   <canvas id="game-canvas"></canvas>
-
-  <!-- HUD -->
   <div id="hud">
-    <!-- P1 -->
     <div class="hud-player" id="hud-p1">
       <div class="hud-player-name" id="hud-p1-name">Player 1</div>
       <div class="hud-char-name" id="hud-p1-char">—</div>
-      <div class="hp-bar-wrap">
-        <div class="hp-bar" id="hp-bar-p1" style="width:100%"></div>
-      </div>
+      <div class="hp-bar-wrap"><div class="hp-bar" id="hp-bar-p1" style="width:100%"></div></div>
       <div class="hp-text">
         <span id="hp-text-p1">100 / 100</span>
         <span id="hp-pct-p1">100%</span>
       </div>
       <div class="hud-stocks" id="stocks-p1">
-        <div class="stock-icon"></div>
-        <div class="stock-icon"></div>
-        <div class="stock-icon"></div>
+        <div class="stock-icon"></div><div class="stock-icon"></div><div class="stock-icon"></div>
       </div>
     </div>
-
-    <!-- Center -->
     <div class="hud-center">
       <div class="round-label">TIME</div>
       <div class="timer-display" id="timer-display">3:00</div>
     </div>
-
-    <!-- P2 -->
     <div class="hud-player p2" id="hud-p2">
       <div class="hud-player-name" id="hud-p2-name">Player 2</div>
       <div class="hud-char-name" id="hud-p2-char">—</div>
-      <div class="hp-bar-wrap">
-        <div class="hp-bar" id="hp-bar-p2" style="width:100%"></div>
-      </div>
+      <div class="hp-bar-wrap"><div class="hp-bar" id="hp-bar-p2" style="width:100%"></div></div>
       <div class="hp-text">
         <span id="hp-pct-p2">100%</span>
         <span id="hp-text-p2">100 / 100</span>
       </div>
       <div class="hud-stocks" id="stocks-p2">
-        <div class="stock-icon"></div>
-        <div class="stock-icon"></div>
-        <div class="stock-icon"></div>
+        <div class="stock-icon"></div><div class="stock-icon"></div><div class="stock-icon"></div>
       </div>
     </div>
   </div>
-
-  <!-- Countdown overlay -->
   <div id="countdown-overlay"></div>
-
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
-<!--  OVERLAYS & MODALS                         -->
+<!--  SETTINGS / KEYBINDINGS MODAL             -->
 <!-- ═══════════════════════════════════════════ -->
+<div class="modal-overlay" id="settings-modal" style="display:none">
+  <div class="modal-box" style="max-width:560px;width:95vw">
+    <div class="modal-title">⚙️ Key Bindings</div>
+    <p style="font-size:12px;color:var(--text2);font-family:var(--font-mono);margin-bottom:16px">
+      Click a binding then press any key to rebind. Changes are saved automatically.
+    </p>
+
+    <div class="settings-tabs">
+      <button class="stab active" data-tab="movement">Movement</button>
+      <button class="stab" data-tab="combat">Combat</button>
+      <button class="stab" data-tab="defense">Defense</button>
+    </div>
+
+    <div class="settings-tab-content" id="stab-movement">
+      <div class="bind-grid">
+        <div class="bind-row"><span class="bind-label">Move Left</span>    <button class="bind-btn" data-action="left"></button></div>
+        <div class="bind-row"><span class="bind-label">Move Right</span>   <button class="bind-btn" data-action="right"></button></div>
+        <div class="bind-row"><span class="bind-label">Jump / Up</span>    <button class="bind-btn" data-action="up"></button></div>
+        <div class="bind-row"><span class="bind-label">Down / Crouch</span><button class="bind-btn" data-action="down"></button></div>
+        <div class="bind-row"><span class="bind-label">Jump (alt)</span>   <button class="bind-btn" data-action="jump"></button></div>
+        <div class="bind-row"><span class="bind-label">Fast Fall</span>    <button class="bind-btn" data-action="fastfall"></button></div>
+      </div>
+    </div>
+
+    <div class="settings-tab-content" id="stab-combat" style="display:none">
+      <div class="bind-grid">
+        <div class="bind-row"><span class="bind-label">Attack</span>       <button class="bind-btn" data-action="attack"></button></div>
+        <div class="bind-row"><span class="bind-label">Attack (alt)</span> <button class="bind-btn" data-action="attack2"></button></div>
+        <div class="bind-row"><span class="bind-label">Special</span>      <button class="bind-btn" data-action="special"></button></div>
+        <div class="bind-row"><span class="bind-label">Special (alt)</span><button class="bind-btn" data-action="special2"></button></div>
+        <div class="bind-row"><span class="bind-label">Grab</span>         <button class="bind-btn" data-action="grab"></button></div>
+        <div class="bind-row"><span class="bind-label">Grab (alt)</span>   <button class="bind-btn" data-action="grab2"></button></div>
+      </div>
+    </div>
+
+    <div class="settings-tab-content" id="stab-defense" style="display:none">
+      <div class="bind-grid">
+        <div class="bind-row"><span class="bind-label">Shield</span>       <button class="bind-btn" data-action="shield"></button></div>
+        <div class="bind-row"><span class="bind-label">Shield (alt)</span> <button class="bind-btn" data-action="shield2"></button></div>
+        <div class="bind-row"><span class="bind-label">Dodge</span>        <button class="bind-btn" data-action="dodge"></button></div>
+        <div class="bind-row"><span class="bind-label">Dodge (alt)</span>  <button class="bind-btn" data-action="dodge2"></button></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn btn-secondary" id="settings-reset-btn" style="flex:1">↺ Reset Defaults</button>
+      <button class="btn btn-primary"   id="settings-close-btn" style="flex:1">✔ Done</button>
+    </div>
+  </div>
+</div>
 
 <!-- Match Result -->
 <div class="overlay" id="result-overlay" style="display:none">
@@ -284,15 +288,14 @@
   </div>
 </div>
 
-<!-- Toast Container -->
 <div id="toast-container"></div>
 
 <!-- ═══════════════════════════════════════════ -->
-<!--  SCRIPTS                                   -->
+<!--  SCRIPTS  (all flat — no subfolders)       -->
 <!-- ═══════════════════════════════════════════ -->
 
-<!-- Failsafe: show lobby immediately so the page is never blank -->
 <script>
+  // Failsafe: show lobby immediately
   document.addEventListener('DOMContentLoaded', () => {
     const lobby = document.getElementById('screen-lobby');
     if (lobby) { lobby.style.display = 'flex'; lobby.style.flexDirection = 'column'; lobby.style.alignItems = 'center'; }
@@ -300,34 +303,26 @@
 </script>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"
-  onerror="console.error('Failed to load PeerJS CDN — check your internet connection.')"></script>
-<script src="stats.js"
-  onerror="console.error('Failed to load stats.js — check the file exists in your repo root.')"></script>
-<script src="network.js"
-  onerror="console.error('Failed to load network.js — check the file exists in your repo root.')"></script>
-<script src="characters/base.js"
-  onerror="console.error('Failed to load characters/base.js — make sure the characters/ folder uploaded correctly.')"></script>
-<script src="characters/iron_knight.js"
-  onerror="console.error('Failed to load characters/iron_knight.js — make sure the characters/ folder uploaded correctly.')"></script>
-<script src="maps/platform_kingdom.js"
-  onerror="console.error('Failed to load maps/platform_kingdom.js — make sure the maps/ folder uploaded correctly.')"></script>
-<script src="engine.js"
-  onerror="console.error('Failed to load engine.js — check the file exists in your repo root.')"></script>
-<script src="ui.js"
-  onerror="console.error('Failed to load ui.js — check the file exists in your repo root.')"></script>
+  onerror="console.error('Failed to load PeerJS CDN')"></script>
+<script src="stats.js"      onerror="console.error('Missing: stats.js')"></script>
+<script src="keybindings.js" onerror="console.error('Missing: keybindings.js')"></script>
+<script src="network.js"    onerror="console.error('Missing: network.js')"></script>
+<script src="characters.js" onerror="console.error('Missing: characters.js — NOTE: file was renamed from characters/base.js + characters/iron_knight.js')"></script>
+<script src="maps.js"       onerror="console.error('Missing: maps.js — NOTE: file was renamed from maps/platform_kingdom.js')"></script>
+<script src="engine.js"     onerror="console.error('Missing: engine.js')"></script>
+<script src="ui.js"         onerror="console.error('Missing: ui.js')"></script>
 
 <script>
-// ─── BOOTSTRAP ───
 window.addEventListener('DOMContentLoaded', () => {
-  // Check all required globals loaded
   const missing = [];
-  if (typeof StatsSystem === 'undefined') missing.push('stats.js');
-  if (typeof Network     === 'undefined') missing.push('network.js');
-  if (typeof CharacterBase === 'undefined') missing.push('characters/base.js');
-  if (typeof CHARACTER_REGISTRY === 'undefined') missing.push('characters/iron_knight.js');
-  if (typeof MAP_REGISTRY === 'undefined') missing.push('maps/platform_kingdom.js');
-  if (typeof Engine === 'undefined') missing.push('engine.js');
-  if (typeof UI === 'undefined') missing.push('ui.js');
+  if (typeof StatsSystem     === 'undefined') missing.push('stats.js');
+  if (typeof Keybindings     === 'undefined') missing.push('keybindings.js');
+  if (typeof Network         === 'undefined') missing.push('network.js');
+  if (typeof CharacterBase   === 'undefined') missing.push('characters.js');
+  if (typeof CHARACTER_REGISTRY === 'undefined') missing.push('characters.js (registry)');
+  if (typeof MAP_REGISTRY    === 'undefined') missing.push('maps.js');
+  if (typeof Engine          === 'undefined') missing.push('engine.js');
+  if (typeof UI              === 'undefined') missing.push('ui.js');
 
   if (missing.length > 0) {
     const lobby = document.getElementById('screen-lobby');
@@ -336,29 +331,22 @@ window.addEventListener('DOMContentLoaded', () => {
       err.style.cssText = 'background:#1a0a0a;border:1px solid #ef4444;color:#ef4444;padding:20px;border-radius:8px;font-family:monospace;font-size:13px;max-width:600px;margin:20px auto;line-height:1.8';
       err.innerHTML = '<strong>⚠️ Some files failed to load:</strong><br>' +
         missing.map(f => `• <code>${f}</code>`).join('<br>') +
-        '<br><br>Check your GitHub repo and make sure these files and folders exist exactly as listed (case-sensitive). See browser Console (F12) for details.';
+        '<br><br>Make sure all .js files are in the repo root (no subfolders). See browser Console (F12) for details.';
       lobby.insertBefore(err, lobby.querySelector('.lobby-grid'));
     }
-    console.error('BrawlForge: Missing scripts:', missing);
     return;
   }
 
-  // Init canvas engine
   Engine.init(document.getElementById('game-canvas'));
-
-  // Init UI (connects to peer, sets up events)
   UI.init();
 
-  // Char card hover — show description
   document.addEventListener('mouseover', e => {
     const card = e.target.closest('.char-card');
     if (!card) return;
     const id = card.dataset.charId;
     const def = CHARACTER_REGISTRY[id];
     const desc = document.getElementById('char-desc');
-    if (def && desc) {
-      desc.textContent = `${def.emoji} ${def.displayName} (${def.archetype}) — ${def.description}`;
-    }
+    if (def && desc) desc.textContent = `${def.emoji} ${def.displayName} (${def.archetype}) — ${def.description}`;
   });
 });
 </script>
