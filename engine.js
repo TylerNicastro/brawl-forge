@@ -77,8 +77,11 @@ const Engine = (() => {
       char.stocks = config.stocks ?? 3;
       players.push(char);
       if (p.peerId === Network.getMyId()) localPlayer = char;
-      else remotePlayer = char;
+      else { char.isAI = !!config.training; remotePlayer = char; }
     }
+
+    // In training: sandbag gets infinite stocks handled by its own die() override
+    const isTraining = !!config.training;
 
     matchTimer = config.timeLimit ?? 180;
     if (matchTimerInterval) clearInterval(matchTimerInterval);
@@ -207,7 +210,7 @@ const Engine = (() => {
     else if (attackJust)   _dispatchAttack(p, dirX, dirY, false);
     else if (specialJust)  _dispatchAttack(p, dirX, dirY, true);
 
-    Network.sendGameInput({
+    if (!localPlayer?.isAI && !remotePlayer?.isAI) Network.sendGameInput({
       dirX, dirY, attackJust, specialJust, grabJust, shieldHeld,
       jump: _actionJust('up') || _actionJust('jump'),
       x: p.x, y: p.y, vx: p.vx, vy: p.vy,
@@ -296,7 +299,7 @@ const Engine = (() => {
       StatsSystem.recordKill();
       UI.toast(`${killer.playerName} KO'd ${p.playerName}!`, 'info');
     }
-    Network.sendDeathEvent({ peerId: p.peerId, killerPeerId: killer?.peerId });
+    if (!p.isAI) Network.sendDeathEvent({ peerId: p.peerId, killerPeerId: killer?.peerId });
     if (p.stocks <= 0) _checkMatchEnd();
     else setTimeout(() => {
       p.respawn(map.spawnPoints[p.playerIndex]?.x ?? 600, map.spawnPoints[p.playerIndex]?.y ?? 100);
@@ -327,20 +330,21 @@ const Engine = (() => {
 
             _spawnDmgNumber(defender.x, defender.y - 60, hb.damage);
 
-            // Big hit: screen freeze + zoom
             if (hb.damage >= 14) {
               const intensity = Math.min(hb.damage / 14, 2.5);
-              hitFreezeFrames = Math.round(4 + intensity * 3); // 4–11 frames freeze
+              hitFreezeFrames = Math.round(4 + intensity * 3);
               _triggerHitZoom(attacker, defender, intensity);
               _triggerShake(intensity);
             }
 
-            Network.sendHitEvent({
-              attackerPeerId: attacker.peerId,
-              defenderPeerId: defender.peerId,
-              damage: hb.damage,
-              attackType: hb.attackType,
-            });
+            if (!defender.isAI && !attacker.isAI) {
+              Network.sendHitEvent({
+                attackerPeerId: attacker.peerId,
+                defenderPeerId: defender.peerId,
+                damage: hb.damage,
+                attackType: hb.attackType,
+              });
+            }
           }
         }
       }
@@ -628,7 +632,7 @@ const Engine = (() => {
     _syncTimer++;
     if (_syncTimer < 3) return;
     _syncTimer = 0;
-    if (localPlayer) {
+    if (localPlayer && !remotePlayer?.isAI) {
       Network.sendGameInput({
         x: localPlayer.x, y: localPlayer.y,
         vx: localPlayer.vx, vy: localPlayer.vy,
