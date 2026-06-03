@@ -33,6 +33,8 @@
       <button class="btn btn-secondary" id="btn-export-stats">⬇ Export JSON</button>
       <div style="height:8px"></div>
       <button class="btn btn-secondary" id="btn-open-settings">⚙️ Key Bindings</button>
+      <div style="height:8px"></div>
+      <button class="btn btn-primary" id="btn-training">🥊 Training Mode</button>
     </div>
 
     <!-- Create Room -->
@@ -131,9 +133,41 @@
     </div>
 
     <div style="display:flex;flex-direction:column;gap:16px">
+      <!-- Host Controls + Match Settings -->
       <div class="panel" id="host-controls">
         <div class="panel-title"><span class="icon">🚀</span> Host Controls</div>
-        <p style="font-size:12px;color:var(--text2);margin-bottom:14px;font-family:var(--font-mono)">
+
+        <div id="match-settings">
+          <div class="setting-row">
+            <span class="setting-label">Stocks</span>
+            <div class="setting-btns" id="setting-stocks">
+              <button class="sbtn active" data-val="1">1</button>
+              <button class="sbtn active" data-val="2">2</button>
+              <button class="sbtn active" data-val="3">3</button>
+              <button class="sbtn" data-val="5">5</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">Timer</span>
+            <div class="setting-btns" id="setting-timer">
+              <button class="sbtn active" data-val="1">On</button>
+              <button class="sbtn" data-val="0">Off</button>
+            </div>
+          </div>
+          <div class="setting-row" id="timelimit-row">
+            <span class="setting-label">Time Limit</span>
+            <div class="setting-btns" id="setting-timelimit">
+              <button class="sbtn" data-val="120">2 min</button>
+              <button class="sbtn active" data-val="180">3 min</button>
+              <button class="sbtn" data-val="300">5 min</button>
+              <button class="sbtn" data-val="9999">∞</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="guest-settings-display" style="display:none;font-size:12px;color:var(--text2);font-family:var(--font-mono);margin-bottom:12px"></div>
+
+        <p style="font-size:12px;color:var(--text2);margin-bottom:14px;font-family:var(--font-mono)" id="start-hint">
           All guests must ready up before you can start.
         </p>
         <button class="btn btn-gold" id="btn-start-match" disabled>▶ Start Match</button>
@@ -265,6 +299,28 @@
         document.getElementById('result-overlay').style.display='none';
         UI.showScreen('room');
       ">🔄 Back to Room</button>
+    </div>
+  </div>
+</div>
+
+<!-- Training Mode Modal -->
+<div class="modal-overlay" id="training-modal" style="display:none">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">🥊 Training Mode</div>
+    <p style="font-size:12px;color:var(--text2);font-family:var(--font-mono);margin-bottom:16px">
+      Practice your moves against a Sandbag. No timer, no stocks — go wild.
+    </p>
+    <div class="field">
+      <label>Your Character</label>
+      <div class="char-grid" id="char-grid-training"></div>
+    </div>
+    <div class="field" style="margin-top:14px">
+      <label>Stage</label>
+      <div class="map-grid" id="map-grid-training"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn btn-secondary" id="training-cancel-btn" style="flex:1">Cancel</button>
+      <button class="btn btn-primary"   id="training-start-btn" style="flex:1">▶ Start Training</button>
     </div>
   </div>
 </div>
