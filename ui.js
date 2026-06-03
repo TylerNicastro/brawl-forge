@@ -1,18 +1,17 @@
 // ═══════════════════════════════════════════════════════════
 //  UI CONTROLLER  — BrawlForge
-//  Manages all screens: lobby, room, game, results
 // ═══════════════════════════════════════════════════════════
 
 const UI = (() => {
 
-  let currentScreen = 'lobby';
+  let currentScreen   = 'lobby';
   let selectedCharacter = null;
-  let selectedMap = null;
-  let playerName = 'Fighter';
-  let trainingChar = null;
-  let trainingMap = null;
+  let selectedMap       = null;
+  let playerName        = 'Fighter';
+  let trainingChar      = null;
+  let trainingMap       = null;
 
-  // Match settings (host only — synced to guests via network)
+  // Match settings (host-owned, synced to guests)
   const matchSettings = { stocks: 3, useTimer: true, timeLimit: 180 };
 
   // ─── INIT ───
@@ -29,29 +28,23 @@ const UI = (() => {
     _bindLobbyEvents();
     _bindRoomEvents();
 
-    // Network events
-    Network.on('roomCreated', ({ roomInfo, roomId }) => _onRoomEntered(roomInfo, roomId, true));
-    Network.on('roomJoined',  ({ roomInfo }) => _onRoomEntered(roomInfo, null, false));
-    Network.on('roomUpdated', ({ roomInfo }) => { _refreshRoomUI(roomInfo); _refreshSettingsDisplay(roomInfo); });
-    Network.on('playerJoined', ({ player }) => toast(`${player.name} joined!`, 'success'));
-    Network.on('playerLeft',  ({ player }) => toast(`${player.name} left.`, 'info'));
-    Network.on('matchStart',  (config) => Engine.startMatch(config));
-    Network.on('lobbyUpdate', ({ rooms }) => _refreshRoomList(rooms));
-    Network.on('status', ({ status, id }) => _updateStatusBar(status, id));
-    Network.on('error', ({ message }) => toast('Network error: ' + message, 'error'));
-    Network.on('chat', (msg) => _appendChat(msg));
+    Network.on('roomCreated',  ({ roomInfo, roomId }) => _onRoomEntered(roomInfo, roomId, true));
+    Network.on('roomJoined',   ({ roomInfo })         => _onRoomEntered(roomInfo, null, false));
+    Network.on('roomUpdated',  ({ roomInfo })         => { _refreshRoomUI(roomInfo); _refreshSettingsDisplay(roomInfo); });
+    Network.on('playerJoined', ({ player })           => toast(`${player.name} joined!`, 'success'));
+    Network.on('playerLeft',   ({ player })           => toast(`${player.name} left.`, 'info'));
+    Network.on('matchStart',   (config)               => Engine.startMatch(config));
+    Network.on('lobbyUpdate',  ({ rooms })            => _refreshRoomList(rooms));
+    Network.on('status',       ({ status, id })       => _updateStatusBar(status, id));
+    Network.on('error',        ({ message })          => toast('Network error: ' + message, 'error'));
+    Network.on('chat',         (msg)                  => _appendChat(msg));
 
-    // Achievement toasts
     window.addEventListener('achievement', e => {
       toast(`🏆 Achievement: ${e.detail.name} — ${e.detail.desc}`, 'success');
     });
 
-    // Init settings / keybinding UI
     SettingsUI.init();
-
-    // Connect to PeerJS
     _connectPeer();
-
     showScreen('lobby');
   }
 
@@ -62,7 +55,6 @@ const UI = (() => {
       _updateStatusBar('connected', id);
       Network.startLobbyListen();
       Network.requestLobbyRooms();
-      // Refresh room list every 4s
       setInterval(() => Network.requestLobbyRooms(), 4000);
     } catch (e) {
       _updateStatusBar('error');
@@ -83,7 +75,6 @@ const UI = (() => {
     const grid = document.getElementById(containerId);
     if (!grid) return;
     grid.innerHTML = '';
-
     for (const [id, def] of Object.entries(CHARACTER_REGISTRY)) {
       const card = document.createElement('div');
       card.className = 'char-card' + (selectedCharacter === id ? ' selected' : '');
@@ -104,7 +95,6 @@ const UI = (() => {
       c.classList.toggle('selected', c.dataset.charId === id);
     });
     Network.sendPlayerUpdate({ characterId: id });
-    _refreshReadyState();
   }
 
   // ─── MAP GRID ───
@@ -112,7 +102,6 @@ const UI = (() => {
     const grid = document.getElementById(containerId);
     if (!grid) return;
     grid.innerHTML = '';
-
     for (const [id, def] of Object.entries(MAP_REGISTRY)) {
       const card = document.createElement('div');
       card.className = 'map-card' + (selectedMap === id ? ' selected' : '');
@@ -131,81 +120,11 @@ const UI = (() => {
     document.querySelectorAll('.map-card').forEach(c => {
       c.classList.toggle('selected', c.dataset.mapId === id);
     });
-    if (Network.getIsHost()) {
-      Network.sendMapSelect(id);
-    }
+    if (Network.getIsHost()) Network.sendMapSelect(id);
   }
 
-  function _bindLobbyEventsInner() {
-    // Name
-    document.getElementById('player-name-input')?.addEventListener('change', e => {
-      playerName = e.target.value.trim() || playerName;
-      StatsSystem.setPlayerName(playerName);
-    });
-
-    // Create room
-    document.getElementById('btn-create-room')?.addEventListener('click', async () => {
-      const name = document.getElementById('room-name-input')?.value.trim() || `${playerName}'s Room`;
-      const pass = document.getElementById('room-pass-input')?.value || '';
-      try { await Network.createRoom(name, pass); }
-      catch (e) { toast(e.message, 'error'); }
-    });
-
-    // Direct join by ID
-    document.getElementById('btn-join-direct')?.addEventListener('click', async () => {
-      const id = document.getElementById('join-id-input')?.value.trim();
-      if (!id) { toast('Enter a room ID', 'error'); return; }
-      _promptJoin(id);
-    });
-
-    // Refresh
-    document.getElementById('btn-refresh-rooms')?.addEventListener('click', () => {
-      Network.requestLobbyRooms();
-      toast('Refreshing rooms…', 'info');
-    });
-  }
-
-  function _bindLobbyEvents() {
-    _bindLobbyEventsInner();
-
-    // Training mode
-    document.getElementById('btn-training')?.addEventListener('click', () => {
-      _buildCharacterGrid('char-grid-training');
-      _buildMapGrid('map-grid-training');
-      // Default selections
-      if (!trainingChar) trainingChar = Object.keys(CHARACTER_REGISTRY).find(k => !CHARACTER_REGISTRY[k].isSandbag);
-      if (!trainingMap)  trainingMap  = Object.keys(MAP_REGISTRY)[0];
-      _highlightGridItem('char-grid-training', '.char-card', '[data-char-id]', trainingChar, 'charId');
-      _highlightGridItem('map-grid-training',  '.map-card',  '[data-map-id]',  trainingMap,  'mapId');
-      document.getElementById('training-modal').style.display = 'flex';
-    });
-    document.getElementById('training-cancel-btn')?.addEventListener('click', () => {
-      document.getElementById('training-modal').style.display = 'none';
-    });
-    document.getElementById('training-start-btn')?.addEventListener('click', () => {
-      if (!trainingChar) { toast('Pick a character!', 'error'); return; }
-      if (!trainingMap)  { toast('Pick a stage!', 'error');     return; }
-      document.getElementById('training-modal').style.display = 'none';
-      _startTrainingMode(trainingChar, trainingMap);
-    });
-    // Training char/map selection
-    document.getElementById('char-grid-training')?.addEventListener('click', e => {
-      const card = e.target.closest('.char-card');
-      if (card && !CHARACTER_REGISTRY[card.dataset.charId]?.isSandbag) {
-        trainingChar = card.dataset.charId;
-        _highlightGridItem('char-grid-training', '.char-card', '[data-char-id]', trainingChar, 'charId');
-      }
-    });
-    document.getElementById('map-grid-training')?.addEventListener('click', e => {
-      const card = e.target.closest('.map-card');
-      if (card) {
-        trainingMap = card.dataset.mapId;
-        _highlightGridItem('map-grid-training', '.map-card', '[data-map-id]', trainingMap, 'mapId');
-      }
-    });
-  }
-
-  function _highlightGridItem(gridId, cardSel, attrSel, val, dataKey) {
+  // ─── HIGHLIGHT HELPER ───
+  function _highlightGridItem(gridId, cardSel, val, dataKey) {
     const grid = document.getElementById(gridId);
     if (!grid) return;
     grid.querySelectorAll(cardSel).forEach(c => {
@@ -213,23 +132,86 @@ const UI = (() => {
     });
   }
 
+  // ─── TRAINING MODE ───
   function _startTrainingMode(charId, mapId) {
     const myId = Network.getMyId() || 'local-player';
-    const config = {
+    Engine.startMatch({
       mapId,
       training: true,
       players: [
-        { peerId: myId, name: playerName, characterId: charId, slot: 0 },
-        { peerId: 'sandbag-dummy', name: 'Sandbag', characterId: 'sandbag', slot: 1 },
+        { peerId: myId,            name: playerName,  characterId: charId,    slot: 0 },
+        { peerId: 'sandbag-dummy', name: 'Sandbag',   characterId: 'sandbag', slot: 1 },
       ],
-      stocks: 99,
-      timeLimit: 9999,
-      useTimer: false,
-    };
-    Engine.startMatch(config);
+      stocks: 99, timeLimit: 9999, useTimer: false,
+    });
   }
 
-  function _bindLobbyEventsInner() {
+  // ─── LOBBY EVENTS ───
+  function _bindLobbyEvents() {
+    document.getElementById('player-name-input')?.addEventListener('change', e => {
+      playerName = e.target.value.trim() || playerName;
+      StatsSystem.setPlayerName(playerName);
+    });
+
+    document.getElementById('btn-create-room')?.addEventListener('click', async () => {
+      const name = document.getElementById('room-name-input')?.value.trim() || `${playerName}'s Room`;
+      const pass = document.getElementById('room-pass-input')?.value || '';
+      try { await Network.createRoom(name, pass); }
+      catch (e) { toast(e.message, 'error'); }
+    });
+
+    document.getElementById('btn-join-direct')?.addEventListener('click', () => {
+      const id = document.getElementById('join-id-input')?.value.trim();
+      if (!id) { toast('Enter a room ID', 'error'); return; }
+      _promptJoin(id);
+    });
+
+    document.getElementById('btn-refresh-rooms')?.addEventListener('click', () => {
+      Network.requestLobbyRooms();
+      toast('Refreshing rooms…', 'info');
+    });
+
+    document.getElementById('btn-view-stats')?.addEventListener('click',   () => _buildStatsPanel());
+    document.getElementById('btn-export-stats')?.addEventListener('click', () => StatsSystem.exportJSON());
+
+    // Training Mode
+    document.getElementById('btn-training')?.addEventListener('click', () => {
+      _buildCharacterGrid('char-grid-training');
+      _buildMapGrid('map-grid-training');
+      if (!trainingChar) trainingChar = Object.keys(CHARACTER_REGISTRY).find(k => !CHARACTER_REGISTRY[k].isSandbag);
+      if (!trainingMap)  trainingMap  = Object.keys(MAP_REGISTRY)[0];
+      _highlightGridItem('char-grid-training', '.char-card', trainingChar, 'charId');
+      _highlightGridItem('map-grid-training',  '.map-card',  trainingMap,  'mapId');
+      document.getElementById('training-modal').style.display = 'flex';
+    });
+
+    document.getElementById('training-cancel-btn')?.addEventListener('click', () => {
+      document.getElementById('training-modal').style.display = 'none';
+    });
+
+    document.getElementById('training-start-btn')?.addEventListener('click', () => {
+      if (!trainingChar) { toast('Pick a character!', 'error'); return; }
+      if (!trainingMap)  { toast('Pick a stage!',     'error'); return; }
+      document.getElementById('training-modal').style.display = 'none';
+      _startTrainingMode(trainingChar, trainingMap);
+    });
+
+    document.getElementById('char-grid-training')?.addEventListener('click', e => {
+      const card = e.target.closest('.char-card');
+      if (card && !CHARACTER_REGISTRY[card.dataset.charId]?.isSandbag) {
+        trainingChar = card.dataset.charId;
+        _highlightGridItem('char-grid-training', '.char-card', trainingChar, 'charId');
+      }
+    });
+
+    document.getElementById('map-grid-training')?.addEventListener('click', e => {
+      const card = e.target.closest('.map-card');
+      if (card) {
+        trainingMap = card.dataset.mapId;
+        _highlightGridItem('map-grid-training', '.map-card', trainingMap, 'mapId');
+      }
+    });
+  }
 
   function _promptJoin(roomId, hasPassword) {
     if (hasPassword) {
@@ -250,7 +232,7 @@ const UI = (() => {
   function _refreshRoomList(rooms) {
     const list = document.getElementById('room-list');
     if (!list) return;
-    if (rooms.length === 0) {
+    if (!rooms.length) {
       list.innerHTML = '<div class="empty-state">No rooms found.<br>Create one or refresh!</div>';
       return;
     }
@@ -267,22 +249,19 @@ const UI = (() => {
         <span class="players-badge${full ? ' full' : ''}">${room.players}/${room.maxPlayers}</span>
         <button class="btn btn-sm btn-secondary" ${full ? 'disabled' : ''}>Join</button>
       `;
-      if (!full) {
-        item.querySelector('button').addEventListener('click', () => _promptJoin(room.roomId, room.hasPassword));
-      }
+      if (!full) item.querySelector('button').addEventListener('click', () => _promptJoin(room.roomId, room.hasPassword));
       list.appendChild(item);
     }
   }
 
+  // ─── MATCH SETTINGS (host syncs to guests) ───
   function _refreshSettingsDisplay(roomInfo) {
     const s = roomInfo?.settings;
     if (!s) return;
-    // Update guest view
     const guestEl = document.getElementById('guest-settings-display');
     if (guestEl) {
-      guestEl.innerHTML = `Stocks: <b>${s.stocks ?? 3}</b> &nbsp;|&nbsp; Timer: <b>${s.useTimer ? s.timeLimit + 's' : 'Off'}</b>`;
+      guestEl.innerHTML = `Stocks: <b>${s.stocks ?? 3}</b> &nbsp;|&nbsp; Timer: <b>${s.useTimer !== false ? (s.timeLimit >= 9999 ? '∞' : s.timeLimit + 's') : 'Off'}</b>`;
     }
-    // Sync matchSettings locally (for when this client is host)
     Object.assign(matchSettings, s);
   }
 
@@ -291,11 +270,9 @@ const UI = (() => {
     showScreen('room');
     _refreshRoomUI(roomInfo);
 
-    // Select defaults
-    if (!selectedCharacter) _selectCharacter(Object.keys(CHARACTER_REGISTRY)[0]);
+    if (!selectedCharacter) _selectCharacter(Object.keys(CHARACTER_REGISTRY).find(k => !CHARACTER_REGISTRY[k].isSandbag));
     if (!selectedMap && isHost) _selectMap(Object.keys(MAP_REGISTRY)[0]);
 
-    // Build room-specific grids
     _buildCharacterGrid('char-grid-room');
     _buildMapGrid('map-grid-room');
 
@@ -304,26 +281,19 @@ const UI = (() => {
       idEl.textContent = `Room ID: ${roomId}`;
       idEl.style.cursor = 'pointer';
       idEl.title = 'Click to copy';
-      idEl.onclick = () => {
-        navigator.clipboard.writeText(roomId);
-        toast('Room ID copied!', 'success');
-      };
+      idEl.onclick = () => { navigator.clipboard.writeText(roomId); toast('Room ID copied!', 'success'); };
     }
 
     document.getElementById('room-title-display').textContent = roomInfo.name;
 
-    const isHostEl = document.getElementById('host-controls');
-    if (isHostEl) isHostEl.style.display = isHost ? '' : 'none';
-
-    // Show settings panel for host, read-only display for guest
-    const settingsPanel = document.getElementById('match-settings');
-    const guestDisplay  = document.getElementById('guest-settings-display');
-    if (settingsPanel) settingsPanel.style.display = isHost ? '' : 'none';
-    if (guestDisplay)  guestDisplay.style.display  = isHost ? 'none' : '';
+    // Host/guest visibility
+    document.getElementById('host-controls').style.display   = isHost ? '' : 'none';
+    document.getElementById('match-settings').style.display  = isHost ? '' : 'none';
+    document.getElementById('guest-settings-display').style.display = isHost ? 'none' : '';
   }
 
   function _bindRoomEvents() {
-    // Match settings (host only — buttons in #match-settings)
+    // Match settings — host only
     document.getElementById('setting-stocks')?.addEventListener('click', e => {
       const btn = e.target.closest('.sbtn');
       if (!btn || !Network.getIsHost()) return;
@@ -332,15 +302,18 @@ const UI = (() => {
       matchSettings.stocks = parseInt(btn.dataset.val);
       Network.sendRoomSettings({ stocks: matchSettings.stocks });
     });
+
     document.getElementById('setting-timer')?.addEventListener('click', e => {
       const btn = e.target.closest('.sbtn');
       if (!btn || !Network.getIsHost()) return;
       document.querySelectorAll('#setting-timer .sbtn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       matchSettings.useTimer = btn.dataset.val === '1';
-      document.getElementById('timelimit-row').style.display = matchSettings.useTimer ? '' : 'none';
+      const tlRow = document.getElementById('timelimit-row');
+      if (tlRow) tlRow.style.display = matchSettings.useTimer ? '' : 'none';
       Network.sendRoomSettings({ useTimer: matchSettings.useTimer });
     });
+
     document.getElementById('setting-timelimit')?.addEventListener('click', e => {
       const btn = e.target.closest('.sbtn');
       if (!btn || !Network.getIsHost()) return;
@@ -349,12 +322,6 @@ const UI = (() => {
       matchSettings.timeLimit = parseInt(btn.dataset.val);
       Network.sendRoomSettings({ timeLimit: matchSettings.timeLimit });
     });
-
-    // Disable settings inputs for guests
-    if (!Network.getIsHost()) {
-      document.getElementById('match-settings').style.display = 'none';
-      document.getElementById('guest-settings-display').style.display = '';
-    }
 
     // Ready toggle
     document.getElementById('btn-ready')?.addEventListener('click', () => {
@@ -365,37 +332,30 @@ const UI = (() => {
       document.getElementById('btn-ready').textContent = newReady ? '⏸ Not Ready' : '✅ Ready';
     });
 
-    // Start match (host only)
+    // Start match
     document.getElementById('btn-start-match')?.addEventListener('click', () => {
       const roomInfo = Network.getRoomInfo();
       if (!roomInfo) return;
-
-      // Check all players have characters
       for (const p of roomInfo.players) {
         if (!p.characterId) { toast(`${p.name} hasn't picked a character!`, 'error'); return; }
       }
       if (!roomInfo.selectedMap) { toast('Please select a map!', 'error'); return; }
-
-      // Check all ready (excluding host who can force start)
       const notReady = roomInfo.players.filter(p => !p.ready && p.peerId !== Network.getMyId());
-      if (notReady.length > 0) {
-        toast('Not all players are ready!', 'error'); return;
-      }
+      if (notReady.length > 0) { toast('Not all players are ready!', 'error'); return; }
 
-      const roomSettings = roomInfo.settings || matchSettings;
-      const config = {
+      const s = roomInfo.settings || matchSettings;
+      Network.sendStartMatch({
         mapId: roomInfo.selectedMap,
         players: roomInfo.players.map((p, i) => ({
           peerId: p.peerId, name: p.name, characterId: p.characterId, slot: i,
         })),
-        stocks:    roomSettings.stocks    ?? 3,
-        timeLimit: roomSettings.useTimer  ? (roomSettings.timeLimit ?? 180) : 9999,
-        useTimer:  roomSettings.useTimer  ?? true,
-      };
-      Network.sendStartMatch(config);
+        stocks:    s.stocks    ?? 3,
+        timeLimit: s.useTimer  ? (s.timeLimit ?? 180) : 9999,
+        useTimer:  s.useTimer  ?? true,
+      });
     });
 
-    // Leave room
+    // Leave
     document.getElementById('btn-leave-room')?.addEventListener('click', () => {
       Network.leaveRoom();
       showScreen('lobby');
@@ -403,21 +363,17 @@ const UI = (() => {
 
     // Chat
     document.getElementById('chat-send-btn')?.addEventListener('click', _sendChat);
-    document.getElementById('chat-input')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') _sendChat();
-    });
+    document.getElementById('chat-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') _sendChat(); });
   }
 
   function _refreshRoomUI(roomInfo) {
     if (!roomInfo) return;
 
-    // Player slots
     for (let i = 0; i < 4; i++) {
       const slotEl = document.getElementById(`player-slot-${i}`);
       if (!slotEl) continue;
       const player = roomInfo.players[i];
-      const isMe = player?.peerId === Network.getMyId();
-
+      const isMe   = player?.peerId === Network.getMyId();
       if (player) {
         slotEl.className = 'player-slot filled' + (isMe ? ' me' : '') + (player.ready ? ' ready' : '');
         const charDef = player.characterId ? CHARACTER_REGISTRY[player.characterId] : null;
@@ -434,7 +390,6 @@ const UI = (() => {
       }
     }
 
-    // Map display
     if (roomInfo.selectedMap) {
       document.querySelectorAll('.map-card').forEach(c => {
         c.classList.toggle('selected', c.dataset.mapId === roomInfo.selectedMap);
@@ -442,16 +397,13 @@ const UI = (() => {
       selectedMap = roomInfo.selectedMap;
     }
 
-    // Host start button
     const startBtn = document.getElementById('btn-start-match');
     if (startBtn) {
       const allReady = roomInfo.players.filter(p => p.peerId !== Network.getMyId()).every(p => p.ready);
       startBtn.disabled = !allReady || roomInfo.players.length < 2;
     }
-  }
 
-  function _refreshReadyState() {
-    // After character select, check if we can mark ready
+    _refreshSettingsDisplay(roomInfo);
   }
 
   // ─── CHAT ───
@@ -468,7 +420,7 @@ const UI = (() => {
     const log = document.getElementById('chat-log');
     if (!log) return;
     const isMe = from === Network.getMyId();
-    const div = document.createElement('div');
+    const div  = document.createElement('div');
     div.style.cssText = `font-size:12px;padding:3px 0;color:${isMe ? '#aaddff' : '#cccccc'};font-family:var(--font-mono)`;
     div.innerHTML = `<span style="color:${isMe ? '#4488ff' : '#888'}">${_esc(name || 'Player')}:</span> ${_esc(text)}`;
     log.appendChild(div);
@@ -477,14 +429,14 @@ const UI = (() => {
 
   // ─── STATUS BAR ───
   function _updateStatusBar(status, id) {
-    const dot = document.getElementById('status-dot');
+    const dot  = document.getElementById('status-dot');
     const text = document.getElementById('status-text');
     if (!dot || !text) return;
     dot.className = 'status-dot ' + status;
-    if (status === 'connected') text.textContent = `Connected — ID: ${id}`;
-    else if (status === 'connecting') text.textContent = 'Connecting…';
+    if      (status === 'connected')    text.textContent = `Connected — ID: ${id}`;
+    else if (status === 'connecting')   text.textContent = 'Connecting…';
     else if (status === 'disconnected') text.textContent = 'Disconnected';
-    else text.textContent = 'Connection error';
+    else                                text.textContent = 'Connection error';
   }
 
   // ─── STATS PANEL ───
@@ -510,21 +462,16 @@ const UI = (() => {
     const overlay = document.getElementById('result-overlay');
     if (!overlay) return;
     overlay.style.display = 'flex';
-
     const title = document.getElementById('result-title');
     const sub   = document.getElementById('result-sub');
     if (title) {
-      if (result === 'win') { title.textContent = 'VICTORY!'; title.style.background = 'linear-gradient(135deg,#22c55e,#86efac)'; }
-      else if (result === 'loss') { title.textContent = 'DEFEAT'; title.style.background = 'linear-gradient(135deg,#ef4444,#fca5a5)'; }
-      else { title.textContent = 'DRAW'; title.style.background = 'linear-gradient(135deg,#ffb800,#fde68a)'; }
-      title.style.webkitBackgroundClip = 'text';
-      title.style.webkitTextFillColor = 'transparent';
+      if      (result === 'win')  { title.textContent = 'VICTORY!'; title.style.background = 'linear-gradient(135deg,#22c55e,#86efac)'; }
+      else if (result === 'loss') { title.textContent = 'DEFEAT';   title.style.background = 'linear-gradient(135deg,#ef4444,#fca5a5)'; }
+      else                        { title.textContent = 'DRAW';     title.style.background = 'linear-gradient(135deg,#ffb800,#fde68a)'; }
+      title.style.webkitBackgroundClip  = 'text';
+      title.style.webkitTextFillColor   = 'transparent';
     }
-    if (sub && winner) {
-      sub.textContent = winner.playerName + ' wins!';
-    } else if (sub) {
-      sub.textContent = "It's a draw!";
-    }
+    if (sub) sub.textContent = winner ? winner.playerName + ' wins!' : "It's a draw!";
   }
 
   // ─── TOAST ───
@@ -538,16 +485,12 @@ const UI = (() => {
     setTimeout(() => el.remove(), 3000);
   }
 
-  // ─── UTILS ───
   function _esc(str) {
     return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  return {
-    init, showScreen, toast, showMatchResult,
-  };
+  return { init, showScreen, toast, showMatchResult };
 })();
 
 window.UI = UI;
-// Expose toast globally for convenience
 window.toast = UI.toast;
